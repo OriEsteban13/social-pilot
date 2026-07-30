@@ -1,0 +1,669 @@
+// Camaleonic Social Pilot — Prisma schema
+//
+// Motor: PostgreSQL (Supabase). Hasta la migración a Postgres, el proyecto
+// usó SQLite en desarrollo local, por eso varios campos siguen modelados de
+// forma compatible con ambos motores en vez de aprovechar tipos nativos de
+// Postgres:
+//   - Los campos "enum" se modelan como String, con los valores válidos documentados
+//     junto al campo y validados en la capa de aplicación (ver src/lib/enums.ts + Zod).
+//   - Las listas (idiomas, hashtags, tags, scopes...) se modelan como Json.
+// Estos campos podrían evolucionar a `enum` nativo y `String[]` de Postgres
+// sin cambiar la forma de uso en el dominio, ya que los servicios ya tratan
+// estos valores como listas/uniones tipadas en TS — no es urgente.
+
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// ─── Identidad y organización ──────────────────────────────────────────────
+
+model User {
+  id           String   @id @default(cuid())
+  email        String   @unique
+  name         String?
+  avatarUrl    String?
+  passwordHash String? // solo para el modo "demo auth" local; en producción la gestiona Supabase Auth
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  memberships        Membership[]
+  auditLogs          AuditLog[]
+  notifications      Notification[]
+  comments           Comment[]
+  ownedContentItems  ContentItem[]  @relation("ContentOwner")
+  ownedBlogArticles  BlogArticle[]  @relation("BlogArticleOwner")
+  requestedApprovals Approval[]     @relation("ApprovalRequestedBy")
+  decidedApprovals   Approval[]     @relation("ApprovalDecidedBy")
+}
+
+// role: OWNER | ADMIN | EDITOR | REVIEWER | VIEWER
+model Membership {
+  id           String    @id @default(cuid())
+  userId       String
+  workspaceId  String
+  role         String    @default("VIEWER")
+  invitedEmail String?
+  invitedAt    DateTime?
+  acceptedAt   DateTime?
+  createdAt    DateTime  @default(now())
+
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, workspaceId])
+  @@index([workspaceId])
+}
+
+// automationLevel: MANUAL | ASSISTED | PILOT | AUTOPILOT | AUTOPILOT_APPROVAL
+model Workspace {
+  id              String   @id @default(cuid())
+  name            String
+  slug            String   @unique
+  logoUrl         String?
+  website         String?
+  industry        String?
+  country         String?
+  languages       Json? // string[] — idiomas que maneja la empresa (configurados en onboarding/ajustes)
+  defaultLanguage String   @default("es") // idioma activo para generar nuevas publicaciones (elegible desde el Dashboard)
+  timezone        String   @default("Europe/Madrid")
+  automationLevel String   @default("ASSISTED")
+  metricoolBlogId String? // "brand" de Metricool que corresponde a esta empresa — ver MetricoolAdapter
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  memberships          Membership[]
+  brandProfile         BrandProfile?
+  brandAssets          BrandAsset[]
+  contentPillars       ContentPillar[]
+  websiteSources       WebsiteSource[]
+  documentSources      DocumentSource[]
+  campaigns            Campaign[]
+  contentIdeas         ContentIdea[]
+  contentItems         ContentItem[]
+  blogArticles         BlogArticle[]
+  mediaAssets          MediaAsset[]
+  calendarEntries      CalendarEntry[]
+  socialAccounts       SocialAccount[]
+  automations          Automation[]
+  approvals            Approval[]
+  notifications        Notification[]
+  auditLogs            AuditLog[]
+  analyticsSnapshots   AnalyticsSnapshot[]
+  aiProviderConfigs    AIProviderConfig[]
+  mediaProviderConfigs MediaProviderConfig[]
+
+  @@index([slug])
+}
+
+// action: p.ej. "content.approved", "post.published", "automation.toggled", "role.changed"
+model AuditLog {
+  id          String   @id @default(cuid())
+  workspaceId String
+  userId      String?
+  action      String
+  entityType  String
+  entityId    String?
+  metadata    Json?
+  createdAt   DateTime @default(now())
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  user      User?     @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([workspaceId, createdAt])
+}
+
+// ─── Brand Brain ────────────────────────────────────────────────────────────
+
+// tone: FORMAL | CERCANO | TECNICO | COMERCIAL | EDUCATIVO | INSPIRADOR | CORPORATIVO | PERSONALIZADO
+model BrandProfile {
+  id                String   @id @default(cuid())
+  workspaceId       String   @unique
+  description       String?
+  valueProposition  String?
+  tone              String   @default("CERCANO")
+  toneCustom        String?
+  targetAudiences   Json?
+  differentiators   Json?
+  claims            Json?
+  allowedTerms      Json?
+  forbiddenTerms    Json?
+  brandColors       Json?
+  brandFonts        Json?
+  competitors       Json?
+  corporateFacts    Json?
+  faqs              Json? // [{ question, answer }]
+  authorizedClients Json?
+  writingStyleNotes String?
+  updatedAt         DateTime @updatedAt
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+}
+
+// type: LOGO | BRAND_BOOK | COLOR_PALETTE | FONT | EXAMPLE_POST | PRESENTATION | OTHER
+model BrandAsset {
+  id          String   @id @default(cuid())
+  workspaceId String
+  type        String
+  name        String
+  url         String
+  metadata    Json?
+  createdAt   DateTime @default(now())
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
+  @@index([workspaceId, type])
+}
+
+model ContentPillar {
+  id             String   @id @default(cuid())
+  workspaceId    String
+  name           String
+  description    String?
+  targetSharePct Int?
+  color          String?
+  createdAt      DateTime @default(now())
+
+  workspace    Workspace     @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  contentIdeas ContentIdea[]
+  contentItems ContentItem[]
+  blogArticles BlogArticle[]
+
+  @@unique([workspaceId, name])
+}
+
+// status: PENDING | CRAWLED | ERROR
+model WebsiteSource {
+  id               String    @id @default(cuid())
+  workspaceId      String
+  url              String
+  lastCrawledAt    DateTime?
+  extractedSummary String?
+  extractedTopics  Json?
+  status           String    @default("PENDING")
+  createdAt        DateTime  @default(now())
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
+  @@index([workspaceId])
+}
+
+// type: PDF | PPTX | DOC | OTHER · status: PENDING | PROCESSED | ERROR
+model DocumentSource {
+  id            String   @id @default(cuid())
+  workspaceId   String
+  fileName      String
+  fileUrl       String
+  type          String   @default("OTHER")
+  extractedText String?
+  status        String   @default("PENDING")
+  createdAt     DateTime @default(now())
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
+  @@index([workspaceId])
+}
+
+// ─── Estrategia y contenido ─────────────────────────────────────────────────
+
+model Campaign {
+  id          String    @id @default(cuid())
+  workspaceId String
+  name        String
+  goal        String?
+  startDate   DateTime?
+  endDate     DateTime?
+  status      String    @default("ACTIVE") // ACTIVE | PAUSED | FINISHED
+  createdAt   DateTime  @default(now())
+
+  workspace       Workspace       @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  contentItems    ContentItem[]
+  calendarEntries CalendarEntry[]
+
+  @@index([workspaceId])
+}
+
+// status: NEW | SAVED | REJECTED | CONVERTED
+// sourceType: WEBSITE | DOCUMENT | NEWS | TREND | MANUAL | PERFORMANCE | FAQ | SUCCESS_CASE | EVENT
+// priority: LOW | MEDIUM | HIGH
+// contentKind: SOCIAL_POST | BLOG_ARTICLE — determina si "convertir" crea un ContentItem (redes) o un BlogArticle
+model ContentIdea {
+  id                  String    @id @default(cuid())
+  workspaceId         String
+  title               String
+  description         String
+  pillarId            String?
+  goal                String?
+  audience            String?
+  recommendedPlatform String? // SocialPlatform — solo aplica a contentKind=SOCIAL_POST
+  recommendedFormat   String? // ContentFormat — solo aplica a contentKind=SOCIAL_POST
+  priority            String    @default("MEDIUM")
+  recommendedDate     DateTime?
+  rationale           String?
+  cta                 String?
+  status              String    @default("NEW")
+  sourceType          String    @default("MANUAL")
+  contentKind         String    @default("SOCIAL_POST")
+  language            String? // idioma de esta publicación (código de SUPPORTED_LANGUAGES); null = usa el idioma por defecto del workspace al generar
+  createdAt           DateTime  @default(now())
+
+  workspace     Workspace      @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  pillar        ContentPillar? @relation(fields: [pillarId], references: [id], onDelete: SetNull)
+  convertedItem ContentItem?
+  blogArticle   BlogArticle?
+
+  @@index([workspaceId, status])
+}
+
+// status (ContentStatus, compartido con CalendarEntry):
+//   IDEA | DRAFT | GENERATING | PENDING_REVIEW | CHANGES_REQUESTED |
+//   APPROVED | SCHEDULED | PUBLISHING | PUBLISHED | ERROR | CANCELLED
+model ContentItem {
+  id           String   @id @default(cuid())
+  workspaceId  String
+  ideaId       String?  @unique
+  campaignId   String?
+  pillarId     String?
+  ownerId      String?
+  title        String
+  status       String   @default("DRAFT")
+  contentScore Int?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  workspace       Workspace        @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  idea            ContentIdea?     @relation(fields: [ideaId], references: [id], onDelete: SetNull)
+  campaign        Campaign?        @relation(fields: [campaignId], references: [id], onDelete: SetNull)
+  pillar          ContentPillar?   @relation(fields: [pillarId], references: [id], onDelete: SetNull)
+  owner           User?            @relation("ContentOwner", fields: [ownerId], references: [id], onDelete: SetNull)
+  variants        ContentVariant[]
+  calendarEntry   CalendarEntry?
+  comments        Comment[]
+  approvalTargets ApprovalTarget[]
+
+  @@index([workspaceId, status])
+}
+
+// Artículo de blog para la web de la empresa — contenido largo, distinto de
+// las publicaciones sociales (sin límite de caracteres, sin red/adaptador de
+// publicación: no hay integración con ningún CMS todavía, así que "PUBLISHED"
+// se marca manualmente una vez el equipo lo ha copiado a su web).
+// status: DRAFT | PENDING_REVIEW | CHANGES_REQUESTED | APPROVED | PUBLISHED
+model BlogArticle {
+  id              String    @id @default(cuid())
+  workspaceId     String
+  ideaId          String?   @unique
+  pillarId        String?
+  ownerId         String?
+  title           String
+  metaDescription String?
+  body            String    @default("")
+  tags            Json? // string[]
+  cta             String?
+  wordCount       Int?
+  needsValidation Boolean   @default(false)
+  status          String    @default("DRAFT")
+  publishedAt     DateTime?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  workspace Workspace      @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  idea      ContentIdea?   @relation(fields: [ideaId], references: [id], onDelete: SetNull)
+  pillar    ContentPillar? @relation(fields: [pillarId], references: [id], onDelete: SetNull)
+  owner     User?          @relation("BlogArticleOwner", fields: [ownerId], references: [id], onDelete: SetNull)
+
+  @@index([workspaceId, status])
+}
+
+// platform: LINKEDIN | INSTAGRAM | TIKTOK | THREADS | X
+// format: POST | CAROUSEL | REEL | STORY | THREAD | VIDEO | POLL | DOCUMENT
+model ContentVariant {
+  id              String   @id @default(cuid())
+  contentItemId   String
+  platform        String
+  format          String   @default("POST")
+  body            String
+  hashtags        Json?
+  cta             String?
+  altText         String?
+  charCount       Int?
+  needsValidation Boolean  @default(false)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  contentItem   ContentItem    @relation(fields: [contentItemId], references: [id], onDelete: Cascade)
+  mediaAssets   MediaAsset[]   @relation("VariantMedia")
+  calendarEntry CalendarEntry?
+
+  @@index([contentItemId])
+}
+
+// type: IMAGE | VIDEO | DOCUMENT | TEMPLATE
+model MediaAsset {
+  id              String   @id @default(cuid())
+  workspaceId     String
+  type            String
+  url             String
+  thumbnailUrl    String?
+  tags            Json?
+  folder          String?
+  sourceGenerator String? // p.ej. "mock-image-provider"
+  width           Int?
+  height          Int?
+  durationSeconds Int?
+  createdAt       DateTime @default(now())
+
+  workspace Workspace        @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  variants  ContentVariant[] @relation("VariantMedia")
+
+  @@index([workspaceId, type])
+}
+
+// ─── Calendario, aprobación y publicación ──────────────────────────────────
+
+model CalendarEntry {
+  id               String   @id @default(cuid())
+  workspaceId      String
+  contentItemId    String   @unique
+  contentVariantId String   @unique
+  socialAccountId  String?
+  campaignId       String?
+  scheduledAt      DateTime
+  status           String   @default("SCHEDULED")
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  workspace      Workspace       @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  contentItem    ContentItem     @relation(fields: [contentItemId], references: [id], onDelete: Cascade)
+  contentVariant ContentVariant  @relation(fields: [contentVariantId], references: [id], onDelete: Cascade)
+  socialAccount  SocialAccount?  @relation(fields: [socialAccountId], references: [id], onDelete: SetNull)
+  campaign       Campaign?       @relation(fields: [campaignId], references: [id], onDelete: SetNull)
+  scheduledPosts ScheduledPost[]
+
+  @@index([workspaceId, scheduledAt])
+}
+
+// scope: ITEM | WEEK | MONTH · status: PENDING | APPROVED | CHANGES_REQUESTED | REJECTED
+model Approval {
+  id                String    @id @default(cuid())
+  workspaceId       String
+  scope             String    @default("ITEM")
+  status            String    @default("PENDING")
+  requestedById     String?
+  decidedById       String?
+  decidedAt         DateTime?
+  publicReviewToken String?   @unique
+  rangeStart        DateTime?
+  rangeEnd          DateTime?
+  createdAt         DateTime  @default(now())
+
+  workspace   Workspace        @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  requestedBy User?            @relation("ApprovalRequestedBy", fields: [requestedById], references: [id], onDelete: SetNull)
+  decidedBy   User?            @relation("ApprovalDecidedBy", fields: [decidedById], references: [id], onDelete: SetNull)
+  targets     ApprovalTarget[]
+  comments    Comment[]
+
+  @@index([workspaceId, status])
+}
+
+model ApprovalTarget {
+  id            String @id @default(cuid())
+  approvalId    String
+  contentItemId String
+
+  approval    Approval    @relation(fields: [approvalId], references: [id], onDelete: Cascade)
+  contentItem ContentItem @relation(fields: [contentItemId], references: [id], onDelete: Cascade)
+
+  @@unique([approvalId, contentItemId])
+}
+
+model Comment {
+  id            String   @id @default(cuid())
+  contentItemId String?
+  approvalId    String?
+  authorId      String
+  body          String
+  createdAt     DateTime @default(now())
+
+  contentItem ContentItem? @relation(fields: [contentItemId], references: [id], onDelete: Cascade)
+  approval    Approval?    @relation(fields: [approvalId], references: [id], onDelete: Cascade)
+  author      User         @relation(fields: [authorId], references: [id], onDelete: Cascade)
+
+  @@index([contentItemId])
+}
+
+// status: PENDING | RUNNING | DONE | FAILED | MANUAL_REQUIRED
+model ScheduledPost {
+  id              String   @id @default(cuid())
+  calendarEntryId String
+  socialAccountId String
+  scheduledAt     DateTime
+  status          String   @default("PENDING")
+  attempts        Int      @default(0)
+  lastError       String?
+  idempotencyKey  String   @unique
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  calendarEntry CalendarEntry  @relation(fields: [calendarEntryId], references: [id], onDelete: Cascade)
+  socialAccount SocialAccount  @relation(fields: [socialAccountId], references: [id], onDelete: Cascade)
+  publishedPost PublishedPost?
+
+  @@unique([calendarEntryId, socialAccountId])
+  @@index([status, scheduledAt])
+}
+
+model PublishedPost {
+  id              String    @id @default(cuid())
+  scheduledPostId String    @unique
+  externalId      String?
+  externalUrl     String?
+  publishedAt     DateTime?
+  rawResponse     Json?
+  simulated       Boolean   @default(true)
+  createdAt       DateTime  @default(now())
+
+  scheduledPost ScheduledPost  @relation(fields: [scheduledPostId], references: [id], onDelete: Cascade)
+  metrics       SocialMetric[]
+}
+
+// platform: LINKEDIN | INSTAGRAM | TIKTOK | THREADS | X
+// status: CONNECTED | EXPIRED | ERROR | DISCONNECTED
+// automationLevelOverride: mismos valores que Workspace.automationLevel
+model SocialAccount {
+  id                      String    @id @default(cuid())
+  workspaceId             String
+  platform                String
+  externalAccountId       String
+  handle                  String?
+  displayName             String?
+  status                  String    @default("DISCONNECTED")
+  automationLevelOverride String?
+  connectedAt             DateTime?
+  createdAt               DateTime  @default(now())
+
+  workspace       Workspace         @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  token           IntegrationToken?
+  calendarEntries CalendarEntry[]
+  scheduledPosts  ScheduledPost[]
+
+  @@unique([workspaceId, platform, externalAccountId])
+  @@index([workspaceId, platform])
+}
+
+model IntegrationToken {
+  id                    String    @id @default(cuid())
+  socialAccountId       String    @unique
+  accessTokenEncrypted  String
+  refreshTokenEncrypted String?
+  expiresAt             DateTime?
+  scopes                Json?
+  createdAt             DateTime  @default(now())
+  updatedAt             DateTime  @updatedAt
+
+  socialAccount SocialAccount @relation(fields: [socialAccountId], references: [id], onDelete: Cascade)
+}
+
+// ─── Automatización ─────────────────────────────────────────────────────────
+
+// status: ACTIVE | PAUSED
+model Automation {
+  id               String   @id @default(cuid())
+  workspaceId      String
+  name             String
+  trigger          String
+  conditions       Json?
+  actions          Json?
+  frequency        String?
+  platforms        Json?
+  requiresApproval Boolean  @default(true)
+  status           String   @default("ACTIVE")
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  workspace Workspace       @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  runs      AutomationRun[]
+
+  @@index([workspaceId, status])
+}
+
+// status: RUNNING | SUCCESS | FAILED
+model AutomationRun {
+  id            String    @id @default(cuid())
+  automationId  String
+  startedAt     DateTime  @default(now())
+  finishedAt    DateTime?
+  status        String    @default("RUNNING")
+  resultSummary String?
+  errorLog      String?
+  createdAt     DateTime  @default(now())
+
+  automation Automation @relation(fields: [automationId], references: [id], onDelete: Cascade)
+
+  @@index([automationId, startedAt])
+}
+
+// Cola genérica de trabajos en background
+// type: p.ej. "generate-week", "publish-scheduled-post", "crawl-website", "sync-analytics"
+// status: PENDING | RUNNING | DONE | FAILED | RETRY
+model JobQueue {
+  id          String    @id @default(cuid())
+  type        String
+  payload     Json?
+  status      String    @default("PENDING")
+  attempts    Int       @default(0)
+  maxAttempts Int       @default(5)
+  runAfter    DateTime  @default(now())
+  lockedAt    DateTime?
+  lastError   String?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  @@index([status, runAfter])
+}
+
+// ─── Analítica ──────────────────────────────────────────────────────────────
+
+model SocialMetric {
+  id               String   @id @default(cuid())
+  publishedPostId  String
+  capturedAt       DateTime @default(now())
+  impressions      Int?
+  reach            Int?
+  likes            Int?
+  comments         Int?
+  shares           Int?
+  saves            Int?
+  clicks           Int?
+  videoViews       Int?
+  watchTimeSeconds Int?
+  newFollowers     Int?
+
+  publishedPost PublishedPost @relation(fields: [publishedPostId], references: [id], onDelete: Cascade)
+
+  @@unique([publishedPostId, capturedAt])
+}
+
+// granularity: WEEK | MONTH
+model AnalyticsSnapshot {
+  id          String   @id @default(cuid())
+  workspaceId String
+  periodStart DateTime
+  periodEnd   DateTime
+  granularity String   @default("WEEK")
+  platform    String?
+  pillarId    String?
+  campaignId  String?
+  metrics     Json?
+  aiSummary   String?
+  createdAt   DateTime @default(now())
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
+  @@index([workspaceId, periodStart])
+}
+
+// ─── IA y notificaciones ────────────────────────────────────────────────────
+
+model PromptTemplate {
+  id        String   @id @default(cuid())
+  key       String
+  version   Int      @default(1)
+  template  String
+  variables Json?
+  createdAt DateTime @default(now())
+
+  @@unique([key, version])
+}
+
+// function: IDEAS | COPY | ADAPT | SUMMARIZE | SCORE | TRANSLATE | VISUAL_PROMPT | SCRIPT
+model AIProviderConfig {
+  id          String   @id @default(cuid())
+  workspaceId String?
+  function    String
+  provider    String   @default("mock")
+  model       String?
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+
+  workspace Workspace? @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
+  @@index([workspaceId, function])
+}
+
+// kind: IMAGE | VIDEO
+model MediaProviderConfig {
+  id          String   @id @default(cuid())
+  workspaceId String?
+  kind        String
+  provider    String   @default("mock")
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+
+  workspace Workspace? @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
+  @@index([workspaceId, kind])
+}
+
+// channel: IN_APP | EMAIL
+model Notification {
+  id          String    @id @default(cuid())
+  workspaceId String
+  userId      String?
+  type        String
+  title       String
+  body        String?
+  payload     Json?
+  channel     String    @default("IN_APP")
+  readAt      DateTime?
+  createdAt   DateTime  @default(now())
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  user      User?     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([workspaceId, userId, readAt])
+}

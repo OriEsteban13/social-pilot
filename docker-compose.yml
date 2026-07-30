@@ -1,0 +1,24 @@
+# Opcional: PostgreSQL local para desarrollar contra el mismo motor que
+# producción (Supabase) en lugar de SQLite. No es necesario para arrancar el
+# proyecto — por defecto se usa SQLite (ver .env.example).
+#
+# Uso:
+#   docker compose up -d
+#   # y luego, en .env: DATABASE_URL="postgresql://postgres:postgres@localhost:5432/camaleonic_social_pilot"
+#   # y en prisma/schema.prisma: datasource db { provider = "postgresql" }
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: camaleonic_social_pilot
+    ports:
+      - "5432:5432"
+    volumes:
+      - camaleonic_social_pilot_pgdata:/var/lib/postgresql/data
+
+volumes:
+  camaleonic_social_pilot_pgdata:
