@@ -18,7 +18,10 @@ services:
     type: web
     runtime: node
     region: frankfurt
-    buildCommand: npm install && npm run build
+    # --include=dev es necesario aunque NODE_ENV=production: el build de
+    # Next.js necesita devDependencies (tailwindcss, typescript...) aunque
+    # el runtime luego no las use. Sin esto, npm install las omite.
+    buildCommand: npm install --include=dev && npm run build
     startCommand: npm run start
     envVars:
       - key: NODE_ENV
