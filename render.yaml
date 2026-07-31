@@ -1,0 +1,75 @@
+# Blueprint de Render (https://render.com/docs/blueprint-spec) — define de un
+# tirón el servicio web y el Cron Job de publicación programada, para no
+# tener que configurar cada campo a mano en el panel.
+#
+# Uso: en Render, "New +" → "Blueprint" → conectar este repo (social-pilot)
+# → Render detecta este archivo automáticamente. Te pedirá rellenar las
+# variables marcadas con `sync: false` (secretos que no viven en el repo).
+#
+# Importante: CRON_SECRET debe ser EXACTAMENTE el mismo valor en los dos
+# servicios (el cron lo usa para autenticarse contra el servicio web) — usa
+# el mismo valor que ya tienes en tu .env local para las dos casillas.
+#
+# El campo `plan` se deja sin definir a propósito para que Render te
+# pregunte qué plan quieres (implica coste) en vez de asumir uno.
+
+services:
+  - name: social-pilot
+    type: web
+    runtime: node
+    region: frankfurt
+    buildCommand: npm run build
+    startCommand: npm run start
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: DATABASE_URL
+        sync: false
+      - key: SESSION_SECRET
+        generateValue: true
+      - key: TOKEN_ENCRYPTION_KEY
+        generateValue: true
+      - key: CRON_SECRET
+        sync: false
+      - key: AI_PROVIDER
+        value: mock # cambia a "anthropic" o "groq" cuando actives una clave real
+      - key: ANTHROPIC_API_KEY
+        sync: false
+      - key: GROQ_API_KEY
+        sync: false
+      - key: IMAGE_PROVIDER
+        value: fal
+      - key: VIDEO_PROVIDER
+        value: fal
+      - key: FAL_KEY
+        sync: false
+      - key: NEXT_PUBLIC_SUPABASE_URL
+        sync: false
+      - key: NEXT_PUBLIC_SUPABASE_ANON_KEY
+        sync: false
+      - key: SUPABASE_SERVICE_ROLE_KEY
+        sync: false
+      - key: SUPABASE_STORAGE_BUCKET
+        value: Media
+      - key: SOCIAL_PROVIDER
+        value: simulated # cambia a "metricool" cuando esté contratado y configurado
+      - key: METRICOOL_USER_TOKEN
+        sync: false
+      - key: METRICOOL_USER_ID
+        sync: false
+
+  - name: social-pilot-cron
+    type: cron
+    runtime: node
+    region: frankfurt
+    schedule: "*/5 * * * *"
+    buildCommand: "true" # no necesita build, solo hace una petición HTTP
+    startCommand: 'curl -sf -X GET "https://$WEB_HOST/api/cron/process-jobs" -H "Authorization: Bearer $CRON_SECRET"'
+    envVars:
+      - key: WEB_HOST
+        fromService:
+          name: social-pilot
+          type: web
+          property: host
+      - key: CRON_SECRET
+        sync: false
