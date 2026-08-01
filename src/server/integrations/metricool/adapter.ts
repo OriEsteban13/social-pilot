@@ -67,14 +67,28 @@ async function getWorkspaceBlogId(workspaceId: string): Promise<string> {
   return workspace.metricoolBlogId;
 }
 
-async function findConnection(blogId: string, network: string): Promise<MetricoolConnection | null> {
-  const data = await metricoolRequest<unknown>(`/v2/settings/brands/${blogId}/connections`, { blogId });
-  const list: MetricoolConnection[] = Array.isArray(data)
-    ? data
-    : Array.isArray((data as { connections?: unknown })?.connections)
-      ? (data as { connections: MetricoolConnection[] }).connections
-      : [];
-  return list.find((c) => c.network?.toLowerCase() === network) ?? null;
+/**
+ * `GET /v2/settings/brands/{blogId}/connections` (usado aquí hasta julio de
+ * 2026, verificado contra el CLI de referencia) devuelve 404 contra la API
+ * real — parece haberse retirado. `GET /v2/settings/brands/{blogId}` (sin el
+ * sufijo) sí responde 200 y trae un campo `data.networksData`, que por lo
+ * visto es un objeto indexado por red (`{ linkedin: {...}, instagram: {...} }`)
+ * en vez de un array. Verificado contra una cuenta real SIN ninguna red
+ * conectada todavía (`networksData: {}`), así que la forma exacta de cada
+ * entrada una vez hay una red conectada de verdad sigue sin confirmar — en
+ * cuanto conectes una red en app.metricool.com, vuelve a probar
+ * `connectAccount` y ajusta el parseo si hiciera falta.
+ */
+export async function findConnection(blogId: string, network: string): Promise<MetricoolConnection | null> {
+  const data = await metricoolRequest<unknown>(`/v2/settings/brands/${blogId}`, { blogId });
+  const brand = (data as { data?: { networksData?: unknown } })?.data;
+  const networksData = brand?.networksData;
+  if (!networksData || typeof networksData !== "object") return null;
+
+  const entry = (networksData as Record<string, unknown>)[network];
+  if (!entry || typeof entry !== "object") return null;
+
+  return { network, ...(entry as Record<string, unknown>) } as MetricoolConnection;
 }
 
 export class MetricoolAdapter implements SocialAdapter {

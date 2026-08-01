@@ -1,6 +1,6 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { encodeMetricoolId, decodeMetricoolId } from "@/server/integrations/metricool/client";
-import { buildText, toPublicationDate, extractPostId, MetricoolAdapter } from "@/server/integrations/metricool/adapter";
+import { buildText, toPublicationDate, extractPostId, findConnection, MetricoolAdapter } from "@/server/integrations/metricool/adapter";
 import { PLATFORM_TO_METRICOOL_NETWORK } from "@/server/integrations/metricool/networks";
 
 describe("Metricool id encoding", () => {
@@ -103,5 +103,44 @@ describe("MetricoolAdapter — rejects data: URIs before calling the API", () =>
   it("createPost rejects a data: URI", async () => {
     const adapter = new MetricoolAdapter("X");
     await expect(adapter.createPost({ ...basePost, mediaUrls: ["data:image/png;base64,Zm9v"] })).rejects.toThrow(/URLs públicas/);
+  });
+});
+
+describe("findConnection", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    delete process.env.METRICOOL_USER_TOKEN;
+    delete process.env.METRICOOL_USER_ID;
+  });
+
+  it("reads connections from GET /v2/settings/brands/{blogId} (data.networksData), not the retired /connections sub-path", async () => {
+    process.env.METRICOOL_USER_TOKEN = "token";
+    process.env.METRICOOL_USER_ID = "1508065";
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      text: async () =>
+        JSON.stringify({
+          data: { id: 1792818, networksData: { linkedin: { id: "999", status: "active" } } },
+        }),
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const connection = await findConnection("1792818", "linkedin");
+
+    expect(connection).toEqual({ network: "linkedin", id: "999", status: "active" });
+    const calledUrl = fetchMock.mock.calls[0][0] as string;
+    expect(calledUrl).toContain("/v2/settings/brands/1792818");
+    expect(calledUrl).not.toContain("/connections");
+  });
+
+  it("returns null when the network isn't present in networksData (regression: real accounts with zero connected networks return {})", async () => {
+    process.env.METRICOOL_USER_TOKEN = "token";
+    process.env.METRICOOL_USER_ID = "1508065";
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({ ok: true, text: async () => JSON.stringify({ data: { id: 1792818, networksData: {} } }) })
+    );
+
+    expect(await findConnection("1792818", "linkedin")).toBeNull();
   });
 });
