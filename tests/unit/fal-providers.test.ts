@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from "vitest";
-import { buildPrompt as buildImagePrompt, DIMENSIONS } from "@/server/media/providers/fal-image";
+import { buildPrompt as buildImagePrompt, describeColor, DIMENSIONS } from "@/server/media/providers/fal-image";
 import {
   buildPrompt as buildVideoPrompt,
   getModelKey,
@@ -18,17 +18,54 @@ describe("FalImageProvider — buildPrompt", () => {
     });
     expect(prompt).toContain("Nuevo panel de analítica");
     expect(prompt).toContain("Camaleonic Survey");
-    expect(prompt).toContain("#6366f1");
+    expect(prompt.toLowerCase()).toContain("azul"); // #6366f1 descrito en lenguaje natural, no como hex
   });
 
-  it("omits the headline instruction when no headline is given", () => {
+  it("omits the headline instruction when no headline is given (the generic style guidance may still mention 'titular' typography)", () => {
     const prompt = buildImagePrompt({
       prompt: "encuestas con IA",
       aspectRatio: "1:1",
       brandName: "Camaleonic Survey",
       brandColors: ["#6366f1"],
     });
-    expect(prompt).not.toContain("titular");
+    expect(prompt).not.toContain("Incluye el titular");
+  });
+
+  it("describes brand colors in natural language instead of raw hex codes (regression: Recraft rendered hex codes as literal text on the image)", () => {
+    const prompt = buildImagePrompt({
+      prompt: "encuestas con IA",
+      aspectRatio: "1:1",
+      brandName: "Camaleonic Survey",
+      brandColors: ["#1f3a2e", "#de6b3f"],
+    });
+    expect(prompt).not.toContain("#1f3a2e");
+    expect(prompt).not.toContain("#de6b3f");
+    expect(prompt.toLowerCase()).toContain("verde");
+  });
+});
+
+describe("describeColor", () => {
+  it("classifies a near-white cream as 'blanco roto', not a pastel hue (regression: HSL saturation formula misfires near lightness=1)", () => {
+    expect(describeColor("#f3f1ea")).toBe("blanco roto");
+    expect(describeColor("#ffffff")).toBe("blanco roto");
+  });
+
+  it("classifies a dark forest green correctly", () => {
+    expect(describeColor("#1f3a2e")).toContain("verde");
+  });
+
+  it("classifies a terracotta/orange tone as an orange family, not literally re-emitting the hex", () => {
+    const description = describeColor("#de6b3f");
+    expect(description).not.toContain("#");
+    expect(description).toMatch(/naranja|terracota/);
+  });
+
+  it("classifies near-black as a dark neutral", () => {
+    expect(describeColor("#000000")).toContain("oscuro");
+  });
+
+  it("returns the input unchanged for a malformed hex", () => {
+    expect(describeColor("not-a-color")).toBe("not-a-color");
   });
 });
 
