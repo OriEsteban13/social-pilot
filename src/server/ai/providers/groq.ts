@@ -40,23 +40,20 @@ import { languageLabel } from "@/lib/languages";
  * Proveedor de IA real basado en la API de Groq (inferencia rápida sobre
  * modelos open-weight de terceros — Kimi K2, GPT-OSS, Llama...). Se activa
  * con `AI_PROVIDER=groq` + `GROQ_API_KEY` — ver .env.example. Usa
- * `response_format: {type: "json_schema", ...}` (Structured Outputs, API
- * compatible con OpenAI) con los MISMOS esquemas Zod que AnthropicAIProvider
- * — se convierten a JSON Schema con `z.toJSONSchema()` (nativo de Zod 4).
- *
- * A diferencia de Claude, Groq solo garantiza cumplimiento estricto del
- * esquema (`strict: true`) en un subconjunto de modelos — por eso, además de
- * pedirlo, se valida la respuesta con el propio esquema Zod antes de
- * devolverla (`schema.parse`), en vez de confiar ciegamente en el JSON
- * devuelto.
+ * `response_format: {type: "json_object"}` (modo JSON, no "Structured
+ * Outputs") con los MISMOS esquemas Zod que AnthropicAIProvider — el JSON
+ * Schema (vía `z.toJSONSchema()`, nativo de Zod 4) se incluye como
+ * instrucción de texto en el prompt, y la respuesta se valida con el propio
+ * esquema Zod antes de devolverla (`schema.safeParse`), en vez de depender
+ * de que Groq garantice el formato del lado del servidor — ver el comentario
+ * de `structuredCompletion()` para el porqué (varios modelos probados contra
+ * una cuenta real no soportaban `json_schema` o no estaban disponibles).
  *
  * Modelo por defecto: `llama-3.3-70b-versatile` — modelo de propósito
  * general de Groq, disponible por defecto en cualquier cuenta. Se probó
- * primero `moonshotai/kimi-k2-instruct-0905` (de los pocos con `strict: true`
- * confirmado en la documentación de Groq) pero devolvió 404 "model_not_found"
- * contra una cuenta real — parece requerir habilitación aparte o ya no estar
- * disponible con ese id exacto. `GROQ_MODEL` permite cambiarlo si se
- * necesita más adelante (comprobar el catálogo vigente en
+ * primero `moonshotai/kimi-k2-instruct-0905` (404, no disponible en la
+ * cuenta) — `GROQ_MODEL` permite cambiarlo si se necesita otro (comprobar el
+ * catálogo vigente en
  * console.groq.com/docs/models antes de cambiarlo).
  *
  * Nota de calidad: al ser modelos open-weight de terceros (no Claude), la
@@ -98,10 +95,23 @@ async function withErrorHandling<T>(action: string, fn: () => Promise<T>): Promi
 }
 
 /**
- * Pide una respuesta JSON ajustada a `schema` (Structured Outputs) y la
- * valida con el propio esquema Zod antes de devolverla — necesario porque,
- * a diferencia de Claude, no todos los modelos de Groq garantizan
- * `strict: true` al 100%.
+ * Pide una respuesta JSON ajustada a `schema` y la valida con el propio
+ * esquema Zod antes de devolverla.
+ *
+ * Usa `response_format: {type: "json_object"}` (modo JSON "clásico",
+ * soportado por prácticamente cualquier modelo de Groq) en vez de
+ * `json_schema` (Structured Outputs): probado contra una cuenta real, dos
+ * modelos distintos fallaron con `json_schema` — `moonshotai/kimi-k2-
+ * instruct-0905` con 404 (no disponible en la cuenta) y
+ * `llama-3.3-70b-versatile` con 400 "this model does not support response
+ * format json_schema". El subconjunto de modelos que sí soportan
+ * `json_schema` es estrecho y varía por cuenta, así que depender de él es
+ * frágil. En su lugar, el JSON Schema de `schema` se describe dentro del
+ * propio prompt (instrucción explícita del formato esperado) y la respuesta
+ * se valida igualmente con `schema.parse(...)` después — si el modelo no
+ * cumple el formato, se detecta aquí con un error claro en vez de guardar
+ * datos corruptos, en vez de confiar ciegamente en una garantía del lado de
+ * Groq que ha demostrado no ser fiable en todos los modelos/cuentas.
  */
 async function structuredCompletion<T extends z.ZodTypeAny>(
   client: Groq,
@@ -109,17 +119,18 @@ async function structuredCompletion<T extends z.ZodTypeAny>(
   schemaName: string,
   params: { system: string; user: string; max_tokens: number }
 ): Promise<z.infer<T>> {
+  const jsonSchema = JSON.stringify(z.toJSONSchema(schema));
   const response = await client.chat.completions.create({
     model: getModel(),
     max_tokens: params.max_tokens,
     messages: [
-      { role: "system", content: params.system },
+      {
+        role: "system",
+        content: `${params.system}\n\nResponde ÚNICAMENTE con un objeto JSON válido (sin explicaciones, sin bloques de código markdown) que cumpla exactamente este JSON Schema:\n${jsonSchema}`,
+      },
       { role: "user", content: params.user },
     ],
-    response_format: {
-      type: "json_schema",
-      json_schema: { name: schemaName, schema: z.toJSONSchema(schema) as Record<string, unknown>, strict: true },
-    },
+    response_format: { type: "json_object" },
   });
 
   const content = response.choices[0]?.message?.content;
@@ -131,10 +142,14 @@ async function structuredCompletion<T extends z.ZodTypeAny>(
   try {
     parsed = JSON.parse(content);
   } catch {
-    throw new Error(`Groq devolvió un JSON inválido para "${schemaName}".`);
+    throw new Error(`Groq devolvió un JSON inválido para "${schemaName}": ${content.slice(0, 200)}`);
   }
 
-  return schema.parse(parsed);
+  const result = schema.safeParse(parsed);
+  if (!result.success) {
+    throw new Error(`Groq devolvió un JSON con un formato inesperado para "${schemaName}": ${result.error.message}`);
+  }
+  return result.data;
 }
 
 export class GroqAIProvider implements AIProvider {
