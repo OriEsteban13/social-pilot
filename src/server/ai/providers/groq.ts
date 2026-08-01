@@ -48,8 +48,16 @@ import { languageLabel } from "@/lib/languages";
  * esquema (`strict: true`) en un subconjunto de modelos — por eso, además de
  * pedirlo, se valida la respuesta con el propio esquema Zod antes de
  * devolverla (`schema.parse`), en vez de confiar ciegamente en el JSON
- * devuelto. Modelo por defecto: `moonshotai/kimi-k2-instruct-0905`, uno de
- * los pocos con `strict: true` confirmado en la documentación de Groq.
+ * devuelto.
+ *
+ * Modelo por defecto: `llama-3.3-70b-versatile` — modelo de propósito
+ * general de Groq, disponible por defecto en cualquier cuenta. Se probó
+ * primero `moonshotai/kimi-k2-instruct-0905` (de los pocos con `strict: true`
+ * confirmado en la documentación de Groq) pero devolvió 404 "model_not_found"
+ * contra una cuenta real — parece requerir habilitación aparte o ya no estar
+ * disponible con ese id exacto. `GROQ_MODEL` permite cambiarlo si se
+ * necesita más adelante (comprobar el catálogo vigente en
+ * console.groq.com/docs/models antes de cambiarlo).
  *
  * Nota de calidad: al ser modelos open-weight de terceros (no Claude), la
  * redacción/matiz de marca y la fidelidad de traducción entre idiomas puede
@@ -61,7 +69,7 @@ import { languageLabel } from "@/lib/languages";
  */
 
 function getModel(): string {
-  return process.env.GROQ_MODEL || "moonshotai/kimi-k2-instruct-0905";
+  return process.env.GROQ_MODEL || "llama-3.3-70b-versatile";
 }
 
 function getClient(): Groq {
