@@ -67,12 +67,10 @@ services:
     region: frankfurt
     schedule: "*/5 * * * *"
     buildCommand: "true" # no necesita build, solo hace una petición HTTP
-    startCommand: 'curl -sf -X GET "https://$WEB_HOST/api/cron/process-jobs" -H "Authorization: Bearer $CRON_SECRET"'
+    # URL fija en vez de fromService/WEB_HOST: esa variable no se estaba
+    # resolviendo (curl fallaba con "exit status 7" = no ha podido conectar,
+    # consistente con un host vacío) — más simple y fiable con la URL real.
+    startCommand: 'curl -sf -X GET "https://social-pilot-6u6s.onrender.com/api/cron/process-jobs" -H "Authorization: Bearer $CRON_SECRET"'
     envVars:
-      - key: WEB_HOST
-        fromService:
-          name: social-pilot
-          type: web
-          property: host
       - key: CRON_SECRET
         sync: false
