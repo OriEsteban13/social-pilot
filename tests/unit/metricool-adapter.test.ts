@@ -113,21 +113,32 @@ describe("findConnection", () => {
     delete process.env.METRICOOL_USER_ID;
   });
 
-  it("reads connections from GET /v2/settings/brands/{blogId} (data.networksData), not the retired /connections sub-path", async () => {
+  it("reads connections from GET /v2/settings/brands/{blogId} (data.networksData.<red>Data), not the retired /connections sub-path", async () => {
     process.env.METRICOOL_USER_TOKEN = "token";
     process.env.METRICOOL_USER_ID = "1508065";
+    // Forma real confirmada contra una cuenta con TikTok conectado de verdad.
     const fetchMock = vi.fn().mockResolvedValue({
       ok: true,
       text: async () =>
         JSON.stringify({
-          data: { id: 1792818, networksData: { linkedin: { id: "999", status: "active" } } },
+          data: {
+            id: 1792818,
+            networksData: {
+              tiktokData: {
+                username: "camaleonicsurvey",
+                providerUserId: "4cbf960a-d914-5a4b-bdfb-32a4f189e4c3",
+                accountType: "PERSONAL",
+                profileURL: "https://www.tiktok.com",
+              },
+            },
+          },
         }),
     });
     vi.stubGlobal("fetch", fetchMock);
 
-    const connection = await findConnection("1792818", "linkedin");
+    const connection = await findConnection("1792818", "tiktok");
 
-    expect(connection).toEqual({ network: "linkedin", id: "999", status: "active" });
+    expect(connection).toMatchObject({ network: "tiktok", username: "camaleonicsurvey" });
     const calledUrl = fetchMock.mock.calls[0][0] as string;
     expect(calledUrl).toContain("/v2/settings/brands/1792818");
     expect(calledUrl).not.toContain("/connections");

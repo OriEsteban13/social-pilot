@@ -71,13 +71,15 @@ async function getWorkspaceBlogId(workspaceId: string): Promise<string> {
  * `GET /v2/settings/brands/{blogId}/connections` (usado aquí hasta julio de
  * 2026, verificado contra el CLI de referencia) devuelve 404 contra la API
  * real — parece haberse retirado. `GET /v2/settings/brands/{blogId}` (sin el
- * sufijo) sí responde 200 y trae un campo `data.networksData`, que por lo
- * visto es un objeto indexado por red (`{ linkedin: {...}, instagram: {...} }`)
- * en vez de un array. Verificado contra una cuenta real SIN ninguna red
- * conectada todavía (`networksData: {}`), así que la forma exacta de cada
- * entrada una vez hay una red conectada de verdad sigue sin confirmar — en
- * cuanto conectes una red en app.metricool.com, vuelve a probar
- * `connectAccount` y ajusta el parseo si hiciera falta.
+ * sufijo) sí responde 200 y trae la info en `data.networksData`, un objeto
+ * indexado por red pero con la clave `"<red>Data"` (p.ej. `tiktokData`, no
+ * `tiktok`) — mismo patrón que ya usa `createPost` para `linkedinData`/
+ * `instagramData` en el body. Verificado con una cuenta real con TikTok
+ * conectado: `{ tiktokData: { username, providerUserId, accountType,
+ * profileURL, picture } }` — sin campos `id`/`active`/`status` (no hacen
+ * falta: `externalAccountId` se construye a partir de blogId+red, no de esto;
+ * `username` sí está presente y es lo único que se usa de aquí para mostrar
+ * el handle).
  */
 export async function findConnection(blogId: string, network: string): Promise<MetricoolConnection | null> {
   const data = await metricoolRequest<unknown>(`/v2/settings/brands/${blogId}`, { blogId });
@@ -85,7 +87,7 @@ export async function findConnection(blogId: string, network: string): Promise<M
   const networksData = brand?.networksData;
   if (!networksData || typeof networksData !== "object") return null;
 
-  const entry = (networksData as Record<string, unknown>)[network];
+  const entry = (networksData as Record<string, unknown>)[`${network}Data`];
   if (!entry || typeof entry !== "object") return null;
 
   return { network, ...(entry as Record<string, unknown>) } as MetricoolConnection;
