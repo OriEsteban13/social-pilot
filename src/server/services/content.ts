@@ -94,6 +94,7 @@ export async function generateVariantForPlatform(params: {
           altText: draft.altText,
           charCount: draft.charCount,
           needsValidation: draft.needsValidation,
+          language: brand.language,
         },
       })
     : await prisma.contentVariant.create({
@@ -107,6 +108,7 @@ export async function generateVariantForPlatform(params: {
           altText: draft.altText,
           charCount: draft.charCount,
           needsValidation: draft.needsValidation,
+          language: brand.language,
         },
       });
 
@@ -147,10 +149,18 @@ export async function adjustVariantBody(variantId: string, instruction: AdjustIn
     where: { id: variantId },
     include: { contentItem: { select: { workspaceId: true } } },
   });
+  // El idioma real de ESTE texto (guardado al generarlo) puede no coincidir
+  // con el idioma por defecto ACTUAL del workspace — p.ej. se generó en
+  // inglés puntualmente desde "Nuevo contenido" y el workspace sigue en
+  // español por defecto. Usar el del workspace aquí mezclaría idiomas al
+  // ajustar (regresión real: "Acortar"/"Más comercial" devolvían el texto en
+  // español aunque el original estuviera en inglés). Solo se cae al idioma
+  // del workspace para variantes anteriores a este campo (`language: null`).
   const workspace = await prisma.workspace.findUniqueOrThrow({
     where: { id: variant.contentItem.workspaceId },
     select: { defaultLanguage: true },
   });
+  const language = variant.language ?? workspace.defaultLanguage;
   const provider = getAIProvider();
   const newBody = await provider.adjustCopy({
     body: variant.body,
@@ -158,12 +168,17 @@ export async function adjustVariantBody(variantId: string, instruction: AdjustIn
     platform: variant.platform as SocialPlatform,
     targetTone: options?.targetTone as never,
     targetLanguage: options?.targetLanguage,
-    language: workspace.defaultLanguage,
+    language,
   });
+
+  // Si la instrucción traduce el texto, el idioma real del body cambia con
+  // ella — hay que actualizar el campo para que el próximo ajuste no vuelva
+  // a usar el idioma antiguo.
+  const newLanguage = instruction === "TRANSLATE" && options?.targetLanguage ? options.targetLanguage : language;
 
   return prisma.contentVariant.update({
     where: { id: variantId },
-    data: { body: newBody, charCount: newBody.length },
+    data: { body: newBody, charCount: newBody.length, language: newLanguage },
   });
 }
 

@@ -161,26 +161,41 @@ export class GroqAIProvider implements AIProvider {
 
     return withErrorHandling("generateIdeas", async () => {
       const client = getClient();
-      const parsed = await structuredCompletion(client, generateIdeasResponseSchema, "generate_ideas", {
+      const basePrompt = [
+        isBlog
+          ? `Genera exactamente ${count} ideas de TEMAS PARA ARTÍCULOS DE BLOG (contenido largo para la web de la empresa, no publicaciones de redes sociales) para esta empresa:`
+          : `Genera exactamente ${count} ideas de contenido para redes sociales para esta empresa:`,
+        renderBrandContext(brand),
+        sourceHint ? `Origen/inspiración solicitada: ${sourceHint}.` : null,
+        goals?.length ? `Objetivos de negocio a priorizar: ${goals.join(", ")}.` : null,
+        excludeTitles.length
+          ? `No repitas (ni parafrasees de forma obvia) estos títulos ya usados: ${excludeTitles.slice(-40).join(" | ")}.`
+          : null,
+        isBlog
+          ? "Cada idea debe indicar el pilar de contenido al que pertenece (usa el nombre exacto de uno de los pilares dados si existen), prioridad, justificación (rationale) y una llamada a la acción (cta). NO incluyas recommendedPlatform ni recommendedFormat — un artículo de blog no tiene red social ni formato."
+          : "Cada idea debe indicar la red social y el formato más adecuados, el pilar de contenido al que pertenece (usa el nombre exacto de uno de los pilares dados si existen), prioridad, justificación (rationale) y una llamada a la acción (cta).",
+        `IMPORTANTE: el array "ideas" de tu respuesta debe contener EXACTAMENTE ${count} elementos completos — ni uno más, ni uno menos.`,
+      ]
+        .filter(Boolean)
+        .join("\n\n");
+
+      let parsed = await structuredCompletion(client, generateIdeasResponseSchema, "generate_ideas", {
         system: contentSystemPrompt(brand, ""),
         max_tokens: 4096,
-        user: [
-          isBlog
-            ? `Genera exactamente ${count} ideas de TEMAS PARA ARTÍCULOS DE BLOG (contenido largo para la web de la empresa, no publicaciones de redes sociales) para esta empresa:`
-            : `Genera exactamente ${count} ideas de contenido para redes sociales para esta empresa:`,
-          renderBrandContext(brand),
-          sourceHint ? `Origen/inspiración solicitada: ${sourceHint}.` : null,
-          goals?.length ? `Objetivos de negocio a priorizar: ${goals.join(", ")}.` : null,
-          excludeTitles.length
-            ? `No repitas (ni parafrasees de forma obvia) estos títulos ya usados: ${excludeTitles.slice(-40).join(" | ")}.`
-            : null,
-          isBlog
-            ? "Cada idea debe indicar el pilar de contenido al que pertenece (usa el nombre exacto de uno de los pilares dados si existen), prioridad, justificación (rationale) y una llamada a la acción (cta). NO incluyas recommendedPlatform ni recommendedFormat — un artículo de blog no tiene red social ni formato."
-            : "Cada idea debe indicar la red social y el formato más adecuados, el pilar de contenido al que pertenece (usa el nombre exacto de uno de los pilares dados si existen), prioridad, justificación (rationale) y una llamada a la acción (cta).",
-        ]
-          .filter(Boolean)
-          .join("\n\n"),
+        user: basePrompt,
       });
+
+      // Un modelo en modo json_object (sin garantía de esquema estricta) a
+      // veces no respeta la cantidad exacta pedida a la primera — se
+      // reintenta una vez con un recordatorio explícito antes de conformarse
+      // con menos ideas de las pedidas.
+      if (parsed.ideas.length < count) {
+        parsed = await structuredCompletion(client, generateIdeasResponseSchema, "generate_ideas", {
+          system: contentSystemPrompt(brand, ""),
+          max_tokens: 4096,
+          user: `${basePrompt}\n\nTu respuesta anterior solo tenía ${parsed.ideas.length} ideas en vez de ${count}. Genera ${count} ideas completas y distintas entre sí.`,
+        });
+      }
 
       const forcedValidation = !hasMinimalBrandContext(brand);
       return parsed.ideas.map((idea) => ({

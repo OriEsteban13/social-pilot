@@ -332,6 +332,7 @@ model ContentVariant {
   altText         String?
   charCount       Int?
   needsValidation Boolean  @default(false)
+  language        String? // idioma real en el que se redactó el body (código de SUPPORTED_LANGUAGES); null = variantes anteriores a este campo, se asume el idioma por defecto del workspace
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
 
