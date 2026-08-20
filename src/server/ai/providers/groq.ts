@@ -49,12 +49,19 @@ import { languageLabel } from "@/lib/languages";
  * de `structuredCompletion()` para el porqué (varios modelos probados contra
  * una cuenta real no soportaban `json_schema` o no estaban disponibles).
  *
- * Modelo por defecto: `llama-3.3-70b-versatile` — modelo de propósito
- * general de Groq, disponible por defecto en cualquier cuenta. Se probó
- * primero `moonshotai/kimi-k2-instruct-0905` (404, no disponible en la
- * cuenta) — `GROQ_MODEL` permite cambiarlo si se necesita otro (comprobar el
- * catálogo vigente en
- * console.groq.com/docs/models antes de cambiarlo).
+ * Modelo por defecto: `openai/gpt-oss-120b`. IMPORTANTE: la cuenta de Groq
+ * usada en este proyecto tiene acceso a un catálogo bastante más reducido de
+ * lo habitual — ni `moonshotai/kimi-k2-instruct-0905` (404) ni
+ * `llama-3.3-70b-versatile` (404, pese a ser un modelo estándar en
+ * cualquier otra cuenta) estaban disponibles. La lista real se comprobó vía
+ * `GET https://api.groq.com/openai/v1/models` con la clave de esta cuenta
+ * (no fiarse solo de console.groq.com/docs/models, que lista el catálogo
+ * general, no el de una cuenta en concreto) — de los modelos de texto de
+ * propósito general disponibles, `openai/gpt-oss-120b` es el único con
+ * soporte confirmado de `structured_outputs` en `supported_features`.
+ * `GROQ_MODEL` permite cambiarlo, pero verifica antes con esa misma llamada
+ * que el modelo elegido existe para la cuenta real, no solo en la
+ * documentación pública.
  *
  * Nota de calidad: al ser modelos open-weight de terceros (no Claude), la
  * redacción/matiz de marca y la fidelidad de traducción entre idiomas puede
@@ -66,7 +73,7 @@ import { languageLabel } from "@/lib/languages";
  */
 
 function getModel(): string {
-  return process.env.GROQ_MODEL || "llama-3.3-70b-versatile";
+  return process.env.GROQ_MODEL || "openai/gpt-oss-120b";
 }
 
 function getClient(): Groq {
