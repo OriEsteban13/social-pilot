@@ -17,8 +17,18 @@ describe("FalImageProvider — buildPrompt", () => {
       brandColors: ["#6366f1", "#10b981"],
     });
     expect(prompt).toContain("Nuevo panel de analítica");
-    expect(prompt).toContain("Camaleonic Survey");
     expect(prompt.toLowerCase()).toContain("azul"); // #6366f1 descrito en lenguaje natural, no como hex
+  });
+
+  it("never mentions the brand name in the prompt (regression: naming it made the model draw a logo and misspell it)", () => {
+    const prompt = buildImagePrompt({
+      prompt: "encuestas con IA",
+      aspectRatio: "1:1",
+      headline: "Nuevo panel de analítica",
+      brandName: "Camaleonic Survey",
+      brandColors: ["#6366f1", "#10b981"],
+    });
+    expect(prompt).not.toContain("Camaleonic Survey");
   });
 
   it("omits the headline instruction when no headline is given (the generic style guidance may still mention 'titular' typography)", () => {

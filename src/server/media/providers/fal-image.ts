@@ -103,13 +103,18 @@ export function buildPrompt(input: GenerateImageInput): string {
     input.prompt,
     input.headline ? `Incluye el titular "${input.headline}" como único texto grande y legible del diseño.` : null,
     input.subheadline ? `Como texto secundario más pequeño: "${input.subheadline}".` : null,
-    `Paleta de color de la marca ${input.brandName} — usa solo estos tonos, sin escribir sus nombres ni códigos en la imagen: ${colorNames}.`,
+    // Deliberadamente NO se menciona el nombre de la marca aquí: probado
+    // contra la API real, incluirlo (aunque sea solo para "usa estos colores
+    // de la marca X") hace que el modelo intente dibujar un logo/lockup con
+    // ese nombre y casi siempre lo escribe mal ("CamalEonic", "Canaleonic").
+    // Basta con darle los colores.
+    `Usa solo esta paleta de colores, sin escribir sus nombres ni códigos en la imagen: ${colorNames}.`,
     // Estilo genérico (boutique SaaS editorial), en prosa corta para no
     // arrastrar frases sueltas que el modelo pueda malinterpretar como texto
     // a renderizar: tipografía serif grande para el titular, un bloque de
     // color sólido de fondo, un acento geométrico discreto, mucho espacio
     // en blanco, nada de ilustraciones de personas ni logos inventados.
-    "Estilo editorial minimalista de producto SaaS premium: tipografía serif elegante para el titular, fondo de color sólido, como mucho un acento geométrico simple (círculo o línea fina), composición limpia con mucho espacio en blanco. No añadas logotipos, marcas, personas ilustradas, iconos de producto ni ningún texto que no sea el titular indicado.",
+    "Estilo editorial minimalista de producto SaaS premium: tipografía serif elegante para el titular, fondo de color sólido, como mucho un acento geométrico simple (círculo o línea fina), composición limpia con mucho espacio en blanco. No añadas logotipos, iconos de marca, marcas de agua, nombres de empresas ni ningún texto salvo el titular indicado — bajo ningún concepto escribas el nombre de ninguna marca o empresa en la imagen, ni siquiera como parte de un logo inventado. No añadas personas ilustradas ni iconos de producto.",
   ].filter(Boolean);
   return parts.join(" ");
 }
