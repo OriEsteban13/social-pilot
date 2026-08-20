@@ -7,6 +7,7 @@ import {
   AlertTriangle,
   CheckCircle2,
   Image as ImageIcon,
+  Languages,
   Loader2,
   Minus,
   Plus,
@@ -26,7 +27,9 @@ import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { PlatformBadge } from "@/components/shared/platform-badge";
+import { SUPPORTED_LANGUAGES } from "@/lib/languages";
 import { VariantPreview } from "./variant-preview";
 import { ContentScorePanel } from "./content-score-panel";
 import {
@@ -90,6 +93,11 @@ export function ContentEditor({
   const [scheduleValue, setScheduleValue] = useState("");
   const [isPending, startTransition] = useTransition();
   const [pendingAction, setPendingAction] = useState<string | null>(null);
+  // Idioma para la próxima generación por plataforma — por defecto, el
+  // idioma real de la idea de origen (si esta pieza viene de una), para que
+  // "Generar para X" no cambie de idioma por sorpresa; se puede cambiar
+  // explícitamente para pedir una traducción.
+  const [language, setLanguage] = useState(item.idea?.language ?? "en");
 
   const activeVariant = item.variants.find((v) => v.platform === tab);
 
@@ -181,19 +189,33 @@ export function ContentEditor({
       {!activeVariant ? (
         <div className="flex flex-col items-center justify-center gap-3 rounded-xl border border-dashed py-16">
           <p className="text-sm text-muted-foreground">Todavía no hay versión para {SOCIAL_PLATFORM_LABELS[tab]}.</p>
-          <Button
-            onClick={() =>
-              run(
-                `gen-${tab}`,
-                () => generateVariantAction(workspaceId, item.id, tab, DEFAULT_FORMAT[tab] as never, item.title),
-                `Versión de ${SOCIAL_PLATFORM_LABELS[tab]} generada`
-              )
-            }
-            disabled={isPending}
-          >
-            {pendingAction === `gen-${tab}` && isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
-            Generar para {SOCIAL_PLATFORM_LABELS[tab]}
-          </Button>
+          <div className="flex items-center gap-2">
+            <Select value={language} onValueChange={setLanguage}>
+              <SelectTrigger className="w-40" aria-label="Idioma de la publicación">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {SUPPORTED_LANGUAGES.map((lang) => (
+                  <SelectItem key={lang.code} value={lang.code}>
+                    {lang.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <Button
+              onClick={() =>
+                run(
+                  `gen-${tab}`,
+                  () => generateVariantAction(workspaceId, item.id, tab, DEFAULT_FORMAT[tab] as never, item.title, language),
+                  `Versión de ${SOCIAL_PLATFORM_LABELS[tab]} generada`
+                )
+              }
+              disabled={isPending}
+            >
+              {pendingAction === `gen-${tab}` && isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
+              Generar para {SOCIAL_PLATFORM_LABELS[tab]}
+            </Button>
+          </div>
         </div>
       ) : (
         <div className="grid grid-cols-1 gap-6 lg:grid-cols-[1.1fr_0.9fr]">
@@ -306,12 +328,13 @@ function VariantEditor({
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
   const [busy, setBusy] = useState<string | null>(null);
+  const [translateTo, setTranslateTo] = useState(variant.language === "en" ? "es" : "en");
   const limit = PLATFORM_CHAR_LIMITS[variant.platform as SocialPlatform];
 
-  function adjust(instruction: AdjustInstruction) {
+  function adjust(instruction: AdjustInstruction, targetLanguage?: string) {
     setBusy(instruction);
     startTransition(async () => {
-      await adjustVariantAction(workspaceId, contentItemId, variant.id, instruction);
+      await adjustVariantAction(workspaceId, contentItemId, variant.id, instruction, targetLanguage);
       router.refresh();
       setBusy(null);
     });
@@ -346,6 +369,24 @@ function VariantEditor({
         <Button size="sm" variant="ghost" onClick={() => adjust("PROOFREAD")} disabled={isPending}>
           <RefreshCw className="h-3.5 w-3.5" />
           Regenerar
+        </Button>
+      </div>
+      <div className="flex flex-wrap items-center gap-1.5">
+        <Select value={translateTo} onValueChange={setTranslateTo}>
+          <SelectTrigger className="h-8 w-32" aria-label="Idioma destino">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            {SUPPORTED_LANGUAGES.map((lang) => (
+              <SelectItem key={lang.code} value={lang.code}>
+                {lang.label}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+        <Button size="sm" variant="outline" onClick={() => adjust("TRANSLATE", translateTo)} disabled={isPending}>
+          {busy === "TRANSLATE" && isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Languages className="h-3.5 w-3.5" />}
+          Traducir
         </Button>
       </div>
       <div className="flex justify-end">

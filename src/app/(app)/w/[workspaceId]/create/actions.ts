@@ -50,18 +50,25 @@ export async function generateVariantAction(
   contentItemId: string,
   platform: SocialPlatform,
   format: ContentFormat,
-  brief: string
+  brief: string,
+  language?: string
 ) {
   const user = await requireUser();
   await requireWorkspaceAccess(user.id, workspaceId, ["OWNER", "ADMIN", "EDITOR"]);
-  await generateVariantForPlatform({ contentItemId, platform, format, brief });
+  await generateVariantForPlatform({ contentItemId, platform, format, brief, language });
   revalidatePath(`/w/${workspaceId}/create/${contentItemId}`);
 }
 
-export async function adjustVariantAction(workspaceId: string, contentItemId: string, variantId: string, instruction: AdjustInstruction) {
+export async function adjustVariantAction(
+  workspaceId: string,
+  contentItemId: string,
+  variantId: string,
+  instruction: AdjustInstruction,
+  targetLanguage?: string
+) {
   const user = await requireUser();
   await requireWorkspaceAccess(user.id, workspaceId, ["OWNER", "ADMIN", "EDITOR"]);
-  await adjustVariantBody(variantId, instruction);
+  await adjustVariantBody(variantId, instruction, { targetLanguage });
   revalidatePath(`/w/${workspaceId}/create/${contentItemId}`);
 }
 
