@@ -1,4 +1,5 @@
 import { getBrandProfile, getPillars, listWebsiteSources, listBrandAssets } from "@/server/services/brand-brain";
+import { isSupabaseStorageConfigured } from "@/server/storage/supabase-storage";
 import { toStringArray } from "@/lib/json";
 import { BrandProfileForm } from "@/components/brand-brain/brand-profile-form";
 import { PillarsManager } from "@/components/brand-brain/pillars-manager";
@@ -42,7 +43,7 @@ export default async function BrandBrainPage({ params }: { params: Promise<{ wor
 
       <PillarsManager workspaceId={workspaceId} pillars={pillars} />
       <WebsiteSources workspaceId={workspaceId} sources={sources} />
-      <BrandAssets workspaceId={workspaceId} assets={assets} />
+      <BrandAssets workspaceId={workspaceId} assets={assets} storageConfigured={isSupabaseStorageConfigured()} />
     </div>
   );
 }
